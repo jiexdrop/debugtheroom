@@ -1,0 +1,19 @@
+# Exclude noisy folders
+exclude:
+  - node_modules/**
+  - dist/**
+  - build/**
+  - .git/**
+  - **/*.lock
+  - **/*.json
+  - **/*.md
+  - **/*.yml
+  - **/*.yaml 
+
+# Context strategy: only send diffs + surrounding lines
+contextStrategy: diff
+
+# Only include 40 lines of context around the change
+contextLines: 15
+
+includeRelatedFiles: false
