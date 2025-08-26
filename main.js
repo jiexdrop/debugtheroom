@@ -17,37 +17,96 @@ let selectedVoiceId = null;
 // Three.js Setup
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ 
+    antialias: true,
+    powerPreference: "high-performance"
+});
 renderer.setSize(window.innerWidth - 350, window.innerHeight);
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
 document.getElementById('threejs-container').appendChild(renderer.domElement);
 
-// Room setup
-const roomGeometry = new THREE.BoxGeometry(10, 8, 10);
-const roomMaterial = new THREE.MeshStandardMaterial({ 
-    color: 0x808080,
+// Room setup with better materials
+const ROOM_WIDTH = 20;
+const ROOM_HEIGHT = 10;
+const ROOM_DEPTH = 20;
+
+// Main room (walls and ceiling)
+const roomGeometry = new THREE.BoxGeometry(ROOM_WIDTH, ROOM_HEIGHT, ROOM_DEPTH);
+const wallMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0xcccccc,
     side: THREE.BackSide,
+    roughness: 0.7,
+    metalness: 0.1
 });
-const room = new THREE.Mesh(roomGeometry, roomMaterial);
+const room = new THREE.Mesh(roomGeometry, wallMaterial);
+room.position.y = ROOM_HEIGHT/2;
+room.receiveShadow = true;
 scene.add(room);
 
-// Add lights
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-scene.add(ambientLight);
-const pointLight = new THREE.PointLight(0xffffff, 1);
-pointLight.position.set(0, 4, 0);
-pointLight.castShadow = true;
-scene.add(pointLight);
+// Add visible floor
+const floorGeometry = new THREE.PlaneGeometry(ROOM_WIDTH, ROOM_DEPTH);
+const floorMaterial = new THREE.MeshStandardMaterial({
+    color: 0x808080,
+    roughness: 0.8,
+    metalness: 0.1
+});
+const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
 
-// Add NPC
-const npcGeometry = new THREE.CapsuleGeometry(0.5, 1, 4, 8);
-const npcMaterial = new THREE.MeshStandardMaterial({ color: 0x4444ff });
+// Enhanced lighting setup
+// Soft ambient light
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+scene.add(ambientLight);
+
+// Main ceiling light
+const mainLight = new THREE.PointLight(0xffeeb1, 1.5);
+mainLight.position.set(0, 7, 0);
+mainLight.castShadow = true;
+mainLight.shadow.bias = -0.001;
+mainLight.shadow.mapSize.width = 1024;
+mainLight.shadow.mapSize.height = 1024;
+mainLight.shadow.camera.near = 0.1;
+mainLight.shadow.camera.far = 20;
+scene.add(mainLight);
+
+// Add some fill lights for better ambient
+const fillLight1 = new THREE.PointLight(0x8ab4ff, 0.5); // Bluish fill light
+fillLight1.position.set(5, 3, 0);
+scene.add(fillLight1);
+
+const fillLight2 = new THREE.PointLight(0xffd38a, 0.5); // Warm fill light
+fillLight2.position.set(-5, 3, 0);
+scene.add(fillLight2);
+
+// Add a subtle ground reflection
+const groundReflection = new THREE.PointLight(0xffffff, 0.3);
+groundReflection.position.set(0, -3, 0);
+scene.add(groundReflection);
+
+// Add NPC with improved materials
+const npcGeometry = new THREE.CapsuleGeometry(0.5, 1.7, 4, 8);
+const npcMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0x4444ff,
+    roughness: 0.3,
+    metalness: 0.2,
+    envMapIntensity: 1.0
+});
 const npc = new THREE.Mesh(npcGeometry, npcMaterial);
-npc.position.set(0, 0, -3);
+npc.position.set(0, 1.7/2, -5); // Position NPC at floor level
+npc.castShadow = true;
+npc.receiveShadow = true;
 scene.add(npc);
 
 // First Person Controls setup
-camera.position.set(0, 1.6, 4); // Set initial position (eye level)
+const PLAYER_HEIGHT = 1.7;
+const PLAYER_RADIUS = 0.3;
+camera.position.set(0, PLAYER_HEIGHT, 4); // Set initial position (eye level)
 let moveForward = false;
 let moveBackward = false;
 let moveLeft = false;
@@ -57,9 +116,13 @@ const velocity = new THREE.Vector3();
 const direction = new THREE.Vector3();
 const clock = new THREE.Clock();
 
-// Add collision detection
-const playerRadius = 0.5;
-const playerHeight = 1.6;
+// Room boundaries (accounting for player radius)
+const roomLimits = {
+    minX: -ROOM_WIDTH/2 + PLAYER_RADIUS,
+    maxX: ROOM_WIDTH/2 - PLAYER_RADIUS,
+    minZ: -ROOM_DEPTH/2 + PLAYER_RADIUS,
+    maxZ: ROOM_DEPTH/2 - PLAYER_RADIUS
+};
 
 document.addEventListener('keydown', (event) => {
     switch(event.code) {
@@ -161,13 +224,20 @@ function animate() {
             velocity.z = newZ;
         }
 
-        // Check room boundaries (with some margin)
-        const margin = playerRadius + 0.1;
-        const roomHalfWidth = 5 - margin;
-        const roomHalfDepth = 5 - margin;
-
-        yawObject.position.x = Math.max(-roomHalfWidth, Math.min(roomHalfWidth, yawObject.position.x + velocity.x));
-        yawObject.position.z = Math.max(-roomHalfDepth, Math.min(roomHalfDepth, yawObject.position.z + velocity.z));
+        // Apply room boundaries
+        const nextX = yawObject.position.x + velocity.x;
+        const nextZ = yawObject.position.z + velocity.z;
+        
+        // Only update position if within boundaries
+        if (nextX >= roomLimits.minX && nextX <= roomLimits.maxX) {
+            yawObject.position.x = nextX;
+        }
+        if (nextZ >= roomLimits.minZ && nextZ <= roomLimits.maxZ) {
+            yawObject.position.z = nextZ;
+        }
+        
+        // Keep player at correct height
+        yawObject.position.y = PLAYER_HEIGHT;
 
         // Check distance to NPC for interaction
         const distanceToNPC = yawObject.position.distanceTo(npc.position);
