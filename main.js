@@ -176,15 +176,15 @@ const npcMaterial = new THREE.MeshStandardMaterial({
     envMapIntensity: 1.0
 });
 const npc = new THREE.Mesh(npcGeometry, npcMaterial);
-npc.position.set(0, 1.7/2, -5); // Position NPC at floor level
+npc.position.set(0, 1.7, -5); // Position NPC at proper height
 npc.castShadow = true;
 npc.receiveShadow = true;
 scene.add(npc);
 
 // First Person Controls setup
-const PLAYER_HEIGHT = 1.7;
+const PLAYER_HEIGHT = 1.6; // Slightly lower player height
 const PLAYER_RADIUS = 0.3;
-camera.position.set(0, PLAYER_HEIGHT, 4); // Set initial position (eye level)
+camera.position.set(0, 0, 0); // Camera position relative to pitch object
 let moveForward = false;
 let moveBackward = false;
 let moveLeft = false;
@@ -249,7 +249,7 @@ const pitchObject = new THREE.Object3D();
 pitchObject.add(camera);
 
 const yawObject = new THREE.Object3D();
-yawObject.position.y = 1.6;
+yawObject.position.y = PLAYER_HEIGHT; // Use player height constant
 yawObject.add(pitchObject);
 scene.add(yawObject);
 
