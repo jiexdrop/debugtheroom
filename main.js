@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import Player2API from './player2-api.js';
 
 // DOM Elements
@@ -29,35 +30,112 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.2;
 document.getElementById('threejs-container').appendChild(renderer.domElement);
 
-// Room setup with better materials
+// Room setup with GLTF models
 const ROOM_WIDTH = 20;
 const ROOM_HEIGHT = 10;
 const ROOM_DEPTH = 20;
 
-// Main room (walls and ceiling)
-const roomGeometry = new THREE.BoxGeometry(ROOM_WIDTH, ROOM_HEIGHT, ROOM_DEPTH);
-const wallMaterial = new THREE.MeshStandardMaterial({ 
-    color: 0xcccccc,
-    side: THREE.BackSide,
-    roughness: 0.7,
-    metalness: 0.1
-});
-const room = new THREE.Mesh(roomGeometry, wallMaterial);
-room.position.y = ROOM_HEIGHT/2;
-room.receiveShadow = true;
-scene.add(room);
+// Load texture
+const textureLoader = new THREE.TextureLoader();
+const protoTexture = textureLoader.load('textures/prototypebits_texture.png');
+protoTexture.encoding = THREE.sRGBEncoding;
 
-// Add visible floor
-const floorGeometry = new THREE.PlaneGeometry(ROOM_WIDTH, ROOM_DEPTH);
-const floorMaterial = new THREE.MeshStandardMaterial({
-    color: 0x808080,
-    roughness: 0.8,
-    metalness: 0.1
-});
-const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-floor.rotation.x = -Math.PI / 2;
-floor.receiveShadow = true;
-scene.add(floor);
+// Initialize GLTF loader
+const gltfLoader = new GLTFLoader();
+const loadModel = (path) => {
+    return new Promise((resolve) => {
+        gltfLoader.load(path, (gltf) => {
+            resolve(gltf.scene);
+        });
+    });
+};
+
+// Create room container
+const roomContainer = new THREE.Group();
+scene.add(roomContainer);
+
+// Load and place room elements
+async function createRoom() {
+    // Load floor tiles (5x5 grid)
+    const floorTile = await loadModel('gltf/Primitive_Floor.gltf');
+    for (let x = -10; x < 10; x += 4) {
+        for (let z = -10; z < 10; z += 4) {
+            const tile = floorTile.clone();
+            tile.position.set(x, 0, z);
+            tile.receiveShadow = true;
+            roomContainer.add(tile);
+        }
+    }
+
+    // Add walls
+    const wall = await loadModel('gltf/Primitive_Wall_Half.gltf');
+    const decoratedWall = await loadModel('gltf/Door_A_Decorated.gltf');
+    
+    // North wall
+    for (let x = -10; x < 10; x += 4) {
+        const wallSection = x === -2 ? decoratedWall.clone() : wall.clone();
+        wallSection.position.set(x, 0, -10);
+        wallSection.castShadow = true;
+        wallSection.receiveShadow = true;
+        roomContainer.add(wallSection);
+    }
+
+    // South wall
+    for (let x = -10; x < 10; x += 4) {
+        const wallSection = wall.clone();
+        wallSection.position.set(x, 0, 10);
+        wallSection.rotation.y = Math.PI;
+        wallSection.castShadow = true;
+        wallSection.receiveShadow = true;
+        roomContainer.add(wallSection);
+    }
+
+    // East and West walls
+    for (let z = -10; z < 10; z += 4) {
+        // East wall
+        const eastWall = wall.clone();
+        eastWall.position.set(-10, 0, z);
+        eastWall.rotation.y = Math.PI / 2;
+        eastWall.castShadow = true;
+        eastWall.receiveShadow = true;
+        roomContainer.add(eastWall);
+
+        // West wall
+        const westWall = wall.clone();
+        westWall.position.set(10, 0, z);
+        westWall.rotation.y = -Math.PI / 2;
+        westWall.castShadow = true;
+        westWall.receiveShadow = true;
+        roomContainer.add(westWall);
+    }
+
+    // Add some props
+    const barrel = await loadModel('gltf/Barrel_A.gltf');
+    const box = await loadModel('gltf/Box_A.gltf');
+    const pillar = await loadModel('gltf/Pillar_A.gltf');
+
+    // Place props
+    const props = [
+        { model: barrel, position: [-8, 0, -8], rotation: 0 },
+        { model: barrel, position: [-7, 0, -8], rotation: 1.2 },
+        { model: box, position: [8, 0, 8], rotation: 0.5 },
+        { model: box, position: [8, 0, 6], rotation: -0.3 },
+        { model: pillar, position: [-8, 0, 8], rotation: 0 },
+        { model: pillar, position: [8, 0, -8], rotation: 0 },
+    ];
+
+    props.forEach(({ model, position, rotation }) => {
+        const prop = model.clone();
+        prop.position.set(...position);
+        prop.rotation.y = rotation;
+        prop.castShadow = true;
+        prop.receiveShadow = true;
+        roomContainer.add(prop);
+    });
+}
+
+// Initialize the room
+createRoom();
 
 // Enhanced lighting setup
 // Soft ambient light
@@ -116,12 +194,12 @@ const velocity = new THREE.Vector3();
 const direction = new THREE.Vector3();
 const clock = new THREE.Clock();
 
-// Room boundaries (accounting for player radius)
+// Room boundaries (accounting for player radius and walls)
 const roomLimits = {
-    minX: -ROOM_WIDTH/2 + PLAYER_RADIUS,
-    maxX: ROOM_WIDTH/2 - PLAYER_RADIUS,
-    minZ: -ROOM_DEPTH/2 + PLAYER_RADIUS,
-    maxZ: ROOM_DEPTH/2 - PLAYER_RADIUS
+    minX: -9 + PLAYER_RADIUS,
+    maxX: 9 - PLAYER_RADIUS,
+    minZ: -9 + PLAYER_RADIUS,
+    maxZ: 9 - PLAYER_RADIUS
 };
 
 document.addEventListener('keydown', (event) => {
