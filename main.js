@@ -57,7 +57,7 @@ scene.add(roomContainer);
 // Load and place room elements
 async function createRoom() {
     // Load floor tiles (5x5 grid)
-    const floorTile = await loadModel('gltf/Primitive_Floor.gltf');
+    const floorTile = await loadModel('gltf/Floor.gltf');
     for (let x = -10; x < 10; x += 4) {
         for (let z = -10; z < 10; z += 4) {
             const tile = floorTile.clone();
@@ -68,7 +68,7 @@ async function createRoom() {
     }
 
     // Add walls
-    const wall = await loadModel('gltf/Primitive_Wall_Half.gltf');
+    const wall = await loadModel('gltf/Wall.gltf');
     const decoratedWall = await loadModel('gltf/Door_A_Decorated.gltf');
     
     // North wall
