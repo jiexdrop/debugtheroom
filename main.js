@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import Player2API from './player2-api.js';
+import gsap from 'gsap';
 
 // DOM Elements
 const authButton = document.getElementById('auth-button');
@@ -14,6 +15,37 @@ const messagesContainer = document.getElementById('messages');
 // Initialize Player2 API Client
 const p2 = new Player2API();
 let selectedVoiceId = null;
+
+// AI Conversation Handler
+const handleAIResponse = async (message) => {
+    const currentPuzzle = puzzles[gameState.currentPuzzle];
+    
+    // Check if the message contains any solution keywords for the current puzzle
+    const containsSolution = currentPuzzle.solution.some(keyword => 
+        message.toLowerCase().includes(keyword.toLowerCase())
+    );
+
+    if (containsSolution && !currentPuzzle.completed) {
+        currentPuzzle.completed = true;
+        gameState.aiTrust += 1;
+        gameState.currentPuzzle++;
+        
+        // Trigger visual feedback in the room
+        updateRoomState();
+        
+        return `[System Progress: ${Math.round((gameState.currentPuzzle / puzzles.length) * 100)}%] 
+                Excellent! You've helped resolve the ${currentPuzzle.id} issue. 
+                ${gameState.currentPuzzle < puzzles.length ? puzzles[gameState.currentPuzzle].description : "Congratulations! The system is now fully operational!"}`;
+    }
+
+    // If stuck, provide a hint
+    if (message.toLowerCase().includes('hint') || message.toLowerCase().includes('help')) {
+        return `Here's a hint: ${currentPuzzle.hint}`;
+    }
+
+    // Default responses based on current puzzle
+    return `I'm still experiencing issues with ${currentPuzzle.id}. ${currentPuzzle.description}`;
+};
 
 // Three.js Setup
 const scene = new THREE.Scene();
@@ -30,10 +62,43 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.2;
 document.getElementById('threejs-container').appendChild(renderer.domElement);
 
+// Game state
+const gameState = {
+    currentPuzzle: 0,
+    inventory: [],
+    unlockedFeatures: new Set(),
+    aiTrust: 0
+};
+
 // Room setup with GLTF models
 const ROOM_WIDTH = 20;
 const ROOM_HEIGHT = 10;
 const ROOM_DEPTH = 20;
+
+// Puzzle definitions
+const puzzles = [
+    {
+        id: 'system_boot',
+        description: 'The AI system seems to be in a corrupted state. You need to help it boot up correctly.',
+        hint: 'Try asking about system status or mentioning keywords like "boot" or "startup"',
+        solution: ['boot', 'startup', 'initialize'],
+        completed: false
+    },
+    {
+        id: 'memory_corruption',
+        description: 'There are corrupted memory segments that need to be fixed.',
+        hint: 'The AI might respond to questions about its memory or data structures',
+        solution: ['memory', 'data', 'corruption'],
+        completed: false
+    },
+    {
+        id: 'security_override',
+        description: 'Security protocols are preventing the door from opening.',
+        hint: 'Try discussing security measures or authorization protocols',
+        solution: ['security', 'override', 'authorization'],
+        completed: false
+    }
+];
 
 // Load texture
 const textureLoader = new THREE.TextureLoader();
@@ -47,6 +112,103 @@ const loadModel = (path) => {
         gltfLoader.load(path, (gltf) => {
             resolve(gltf.scene);
         });
+    });
+};
+
+// Setup room environment
+const setupRoom = async () => {
+    // Load room elements
+    const floorModel = await loadModel('gltf/Floor.gltf');
+    const wallModel = await loadModel('gltf/Primitive_Wall_Half.gltf');
+    const doorModel = await loadModel('gltf/Door_A.gltf');
+    
+    // Set up floor
+    floorModel.position.set(0, 0, 0);
+    scene.add(floorModel);
+    
+    // Set up walls
+    const walls = [];
+    for (let i = 0; i < 4; i++) {
+        const wall = wallModel.clone();
+        wall.rotation.y = (Math.PI / 2) * i;
+        wall.position.set(
+            Math.sin(wall.rotation.y) * ROOM_WIDTH/2,
+            ROOM_HEIGHT/4,
+            Math.cos(wall.rotation.y) * ROOM_DEPTH/2
+        );
+        walls.push(wall);
+        scene.add(wall);
+    }
+    
+    // Set up door
+    const door = doorModel.clone();
+    door.name = 'escape_door';
+    door.position.set(0, 0, ROOM_DEPTH/2);
+    scene.add(door);
+    
+    // Add lights
+    const lights = [];
+    const ambientLight = new THREE.AmbientLight(0x404040, 0.2);
+    scene.add(ambientLight);
+    lights.push(ambientLight);
+    
+    const pointLight = new THREE.PointLight(0x00ffff, 0.2, ROOM_WIDTH * 2);
+    pointLight.position.set(0, ROOM_HEIGHT/2, 0);
+    scene.add(pointLight);
+    lights.push(pointLight);
+    
+    // Position camera
+    camera.position.set(0, ROOM_HEIGHT/2, -ROOM_DEPTH/3);
+    camera.lookAt(0, ROOM_HEIGHT/4, 0);
+    
+    return lights;
+};
+
+// Room state management
+const updateRoomState = async () => {
+    const progress = gameState.currentPuzzle / puzzles.length;
+    
+    // Update lighting based on progress
+    const intensity = 0.2 + (progress * 0.8);
+    lights.forEach(light => {
+        light.intensity = intensity;
+    });
+
+    // Update door state
+    if (gameState.currentPuzzle >= puzzles.length) {
+        // Open the door
+        const door = scene.getObjectByName('escape_door');
+        if (door) {
+            const targetRotation = Math.PI / 2;
+            gsap.to(door.rotation, {
+                y: targetRotation,
+                duration: 2,
+                ease: 'power2.inOut'
+            });
+        }
+    }
+
+    // Add visual effects for puzzle completion
+    const effect = new THREE.Mesh(
+        new THREE.SphereGeometry(0.5, 32, 32),
+        new THREE.MeshBasicMaterial({
+            color: 0x00ff00,
+            transparent: true,
+            opacity: 0.5
+        })
+    );
+    effect.position.set(0, 2, 0);
+    scene.add(effect);
+    
+    gsap.to(effect.scale, {
+        x: 2,
+        y: 2,
+        z: 2,
+        duration: 1,
+        ease: 'power2.out',
+        onComplete: () => {
+            scene.remove(effect);
+        }
     });
 };
 
@@ -133,9 +295,6 @@ async function createRoom() {
         roomContainer.add(prop);
     });
 }
-
-// Initialize the room
-createRoom();
 
 // Enhanced lighting setup
 // Soft ambient light
@@ -276,7 +435,15 @@ document.addEventListener('mousemove', (event) => {
     }
 });
 
-function animate() {
+// Initialize game
+let lights = [];
+const init = async () => {
+    lights = await setupRoom();
+    createRoom();
+    animate();
+};
+
+const animate = () => {
     requestAnimationFrame(animate);
 
     if (isMouseLocked) {
@@ -321,6 +488,7 @@ function animate() {
         const distanceToNPC = yawObject.position.distanceTo(npc.position);
         if (distanceToNPC < 2) {
             messageInput.placeholder = "Talk to NPC...";
+            messageInput.disabled = false;
         } else {
             messageInput.placeholder = "Get closer to NPC to talk...";
             messageInput.disabled = true;
@@ -332,10 +500,10 @@ function animate() {
     
     renderer.render(scene, camera);
 }
-animate();
 
-// Initialize chat immediately
+// Start the game and initialize chat
 document.addEventListener('DOMContentLoaded', () => {
+    init();  // Start the game when the DOM is ready
     messageInput.disabled = false;
     messageForm.querySelector('button').disabled = false;
     authButton.style.display = 'none';
