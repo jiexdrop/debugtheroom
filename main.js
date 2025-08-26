@@ -14,68 +14,185 @@ const messagesContainer = document.getElementById('messages');
 const p2 = new Player2API();
 let selectedVoiceId = null;
 
-// Three.js Basic Setup
+// Three.js Setup
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-const renderer = new THREE.WebGLRenderer();
+const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth - 350, window.innerHeight);
+renderer.shadowMap.enabled = true;
 document.getElementById('threejs-container').appendChild(renderer.domElement);
 
-// Add basic cube for visualization
-const geometry = new THREE.BoxGeometry();
-const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-const cube = new THREE.Mesh(geometry, material);
-scene.add(cube);
-camera.position.z = 5;
+// Room setup
+const roomGeometry = new THREE.BoxGeometry(10, 8, 10);
+const roomMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0x808080,
+    side: THREE.BackSide,
+});
+const room = new THREE.Mesh(roomGeometry, roomMaterial);
+scene.add(room);
+
+// Add lights
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+scene.add(ambientLight);
+const pointLight = new THREE.PointLight(0xffffff, 1);
+pointLight.position.set(0, 4, 0);
+pointLight.castShadow = true;
+scene.add(pointLight);
+
+// Add NPC
+const npcGeometry = new THREE.CapsuleGeometry(0.5, 1, 4, 8);
+const npcMaterial = new THREE.MeshStandardMaterial({ color: 0x4444ff });
+const npc = new THREE.Mesh(npcGeometry, npcMaterial);
+npc.position.set(0, 0, -3);
+scene.add(npc);
+
+// First Person Controls setup
+camera.position.set(0, 1.6, 4); // Set initial position (eye level)
+let moveForward = false;
+let moveBackward = false;
+let moveLeft = false;
+let moveRight = false;
+
+const velocity = new THREE.Vector3();
+const direction = new THREE.Vector3();
+const clock = new THREE.Clock();
+
+// Add collision detection
+const playerRadius = 0.5;
+const playerHeight = 1.6;
+
+document.addEventListener('keydown', (event) => {
+    switch(event.code) {
+        case 'ArrowUp':
+        case 'KeyW':
+            moveForward = true;
+            break;
+        case 'ArrowDown':
+        case 'KeyS':
+            moveBackward = true;
+            break;
+        case 'ArrowLeft':
+        case 'KeyA':
+            moveLeft = true;
+            break;
+        case 'ArrowRight':
+        case 'KeyD':
+            moveRight = true;
+            break;
+    }
+});
+
+document.addEventListener('keyup', (event) => {
+    switch(event.code) {
+        case 'ArrowUp':
+        case 'KeyW':
+            moveForward = false;
+            break;
+        case 'ArrowDown':
+        case 'KeyS':
+            moveBackward = false;
+            break;
+        case 'ArrowLeft':
+        case 'KeyA':
+            moveLeft = false;
+            break;
+        case 'ArrowRight':
+        case 'KeyD':
+            moveRight = false;
+            break;
+    }
+});
+
+// Mouse look controls
+const pitchObject = new THREE.Object3D();
+pitchObject.add(camera);
+
+const yawObject = new THREE.Object3D();
+yawObject.position.y = 1.6;
+yawObject.add(pitchObject);
+scene.add(yawObject);
+
+let isMouseLocked = false;
+
+document.getElementById('threejs-container').addEventListener('click', () => {
+    if (!isMouseLocked) {
+        document.body.requestPointerLock();
+    }
+});
+
+document.addEventListener('pointerlockchange', () => {
+    isMouseLocked = document.pointerLockElement !== null;
+});
+
+document.addEventListener('mousemove', (event) => {
+    if (isMouseLocked) {
+        const movementX = event.movementX || 0;
+        const movementY = event.movementY || 0;
+
+        yawObject.rotation.y -= movementX * 0.002;
+        pitchObject.rotation.x -= movementY * 0.002;
+        pitchObject.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitchObject.rotation.x));
+    }
+});
 
 function animate() {
-  requestAnimationFrame(animate);
-  cube.rotation.x += 0.01;
-  cube.rotation.y += 0.01;
-  renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+
+    if (isMouseLocked) {
+        const delta = clock.getDelta();
+        const moveSpeed = 5.0;
+
+        // Reset velocity
+        velocity.x = 0;
+        velocity.z = 0;
+
+        // Calculate movement direction
+        if (moveForward) velocity.z -= moveSpeed * delta;
+        if (moveBackward) velocity.z += moveSpeed * delta;
+        if (moveLeft) velocity.x -= moveSpeed * delta;
+        if (moveRight) velocity.x += moveSpeed * delta;
+
+        // Apply rotation to movement
+        if (moveForward || moveBackward || moveLeft || moveRight) {
+            const rotation = yawObject.rotation.y;
+            const newX = velocity.x * Math.cos(rotation) + velocity.z * Math.sin(rotation);
+            const newZ = velocity.z * Math.cos(rotation) - velocity.x * Math.sin(rotation);
+            velocity.x = newX;
+            velocity.z = newZ;
+        }
+
+        // Check room boundaries (with some margin)
+        const margin = playerRadius + 0.1;
+        const roomHalfWidth = 5 - margin;
+        const roomHalfDepth = 5 - margin;
+
+        yawObject.position.x = Math.max(-roomHalfWidth, Math.min(roomHalfWidth, yawObject.position.x + velocity.x));
+        yawObject.position.z = Math.max(-roomHalfDepth, Math.min(roomHalfDepth, yawObject.position.z + velocity.z));
+
+        // Check distance to NPC for interaction
+        const distanceToNPC = yawObject.position.distanceTo(npc.position);
+        if (distanceToNPC < 2) {
+            messageInput.placeholder = "Talk to NPC...";
+        } else {
+            messageInput.placeholder = "Get closer to NPC to talk...";
+            messageInput.disabled = true;
+        }
+    }
+
+    // Make NPC look at player
+    npc.lookAt(yawObject.position);
+    
+    renderer.render(scene, camera);
 }
 animate();
 
-// Authentication Flow
-authButton.addEventListener('click', async () => {
-  try {
-    authButton.disabled = true;
-    authButton.textContent = 'Starting authentication...';
-    // The backend may allow unauthenticated chat. Try to start device auth but don't block chat.
-    try {
-      const authData = await p2.startDeviceAuth('susume-bratislava');
-      if (authData?.verificationUri) {
-        verificationInfo.style.display = 'block';
-        verificationLink.href = authData.verificationUriComplete || authData.verificationUri;
-        verificationLink.textContent = authData.verificationUri;
-        userCode.textContent = authData.userCode || '';
-      }
-
-      // Try to poll for a token but don't fail the whole flow if polling isn't supported.
-      try {
-        await p2.pollForToken(authData.deviceCode, 'susume-bratislava');
-        verificationInfo.style.display = 'none';
-        authButton.style.display = 'none';
-      } catch (pollErr) {
-        console.warn('Token polling failed or unsupported:', pollErr);
-        // keep auth UI visible so the user can manually authenticate if desired
-      }
-    } catch (err) {
-      console.warn('Device auth not available or failed, continuing without auth:', err);
-      // Hide verification UI if server doesn't support device auth
-      verificationInfo.style.display = 'none';
-    }
-
-    // Enable chat UI regardless of whether auth succeeded
+// Initialize chat immediately
+document.addEventListener('DOMContentLoaded', () => {
     messageInput.disabled = false;
     messageForm.querySelector('button').disabled = false;
-    p2.startHealthChecks();
+    authButton.style.display = 'none';
+    verificationInfo.style.display = 'none';
     loadVoices();
-  } catch (error) {
-    console.error('Authentication failed:', error);
-    authButton.disabled = false;
-    authButton.textContent = 'Login failed - Try again';
-  }
 });
 
 // Voice Selection

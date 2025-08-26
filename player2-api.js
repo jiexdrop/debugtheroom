@@ -1,40 +1,7 @@
 class Player2API {
   constructor() {
-  // Use the Vite proxy prefix so requests are forwarded to the backend target in vite.config.js
-  // Postman uses http://127.0.0.1:4315/v1/..., so the client uses /v1 and the dev server should proxy /v1 -> backend.
-  this.baseUrl = '/v1';
-    this.authToken = null;
-    this.healthCheckInterval = null;
-  // Enable lightweight dev mock responses when running on localhost so UI can be tested
-  this.devMock = (typeof window !== 'undefined') && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-  }
-
-  // Health Check Endpoint
-  async checkHealth() {
-    if (!this.authToken) {
-      throw new Error('Authentication required');
-    }
-
-    try {
-      const response = await fetch(`${this.baseUrl}/health`, {
-        headers: {
-          'Authorization': `Bearer ${this.authToken}`
-        }
-      });
-      return await response.json();
-    } catch (error) {
-      console.error('Health check failed:', error);
-      throw error;
-    }
-  }
-
-  // Start periodic health checks (every 60 seconds)
-  startHealthChecks() {
-    this.healthCheckInterval = setInterval(() => {
-      this.checkHealth()
-        .then(data => console.log('Health check:', data))
-        .catch(error => console.error('Health check error:', error));
-    }, 60000);
+    this.baseUrl = '/v1';
+    this.devMock = (typeof window !== 'undefined') && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
   }
 
   // Device Authorization Flow
@@ -51,7 +18,7 @@ class Player2API {
       const errText = await response.text();
       if (response.status === 404 && this.devMock) {
         // backend doesn't implement device auth in this environment
-        return {};
+        return { dev: 'unsupported' };
       }
       throw new Error(`Device auth failed: ${response.status} ${response.statusText} - ${errText}`);
     }
